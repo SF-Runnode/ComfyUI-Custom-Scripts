@@ -143,11 +143,15 @@ class SaveText(TextFileNode):
         return float("nan")
 
     @classmethod
+    def VALIDATE_INPUTS(cls, **kwargs):
+        return True
+
+    @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
-                "root_dir": (list(get_valid_dirs()), {}),
-                "file": ("STRING", {"default": "file.txt"}),
+                "filename_prefix": ("STRING", {"default": "ComfyUI"}),
+                "file_extension": ("STRING", {"default": ".txt"}),
                 "append": (["append", "overwrite", "new only"], {}),
                 "insert": ("BOOLEAN", {
                     "default": True, "label_on": "new line", "label_off": "none",
@@ -179,18 +183,40 @@ class SaveText(TextFileNode):
 
     FUNCTION = "write_text"
 
-    def write_text(self, **kwargs):
-        self.file = get_file(kwargs["root_dir"], kwargs["file"])
-        if kwargs["append"] == "new only" and os.path.exists(self.file):
+    def write_text(self, filename_prefix, file_extension, text, append, insert):
+        # Path Sanitization
+        filename_prefix = filename_prefix.replace('\\', '/')
+        filename_prefix = filename_prefix.lstrip('/')
+        
+        output_dir = folder_paths.get_output_directory()
+        
+        if '/' in filename_prefix:
+            subfolder = os.path.dirname(filename_prefix)
+            prefix = os.path.basename(filename_prefix)
+        else:
+            subfolder = ""
+            prefix = filename_prefix
+            
+        destination_dir = os.path.join(output_dir, subfolder)
+        os.makedirs(destination_dir, exist_ok=True)
+        
+        file_name = f"{prefix}{file_extension}"
+        self.file = os.path.join(destination_dir, file_name)
+        
+        if append == "new only" and os.path.exists(self.file):
             raise FileExistsError(
                 self.file + " already exists and 'new only' is selected.")
-        with open(self.file, "a+" if kwargs["append"] == "append" else "w") as f:
+        
+        with open(self.file, "a+" if append == "append" else "w", encoding="utf-8") as f:
             is_append = f.tell() != 0
-            if is_append and kwargs["insert"]:
+            if is_append and insert:
                 f.write("\n")
-            f.write(kwargs["text"])
+            f.write(text)
 
-        return super().load_text(**kwargs)
+        with open(self.file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        return {"ui": {"files": [{"filename": file_name, "subfolder": subfolder, "type": "output"}]}, "result": (content,)}
 
 
 NODE_CLASS_MAPPINGS = {
